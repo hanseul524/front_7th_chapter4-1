@@ -2,53 +2,11 @@ import { createStore } from "./lib/createStore.js";
 import { productReducer, cartReducer, initialProductState, initialCartState, PRODUCT_ACTIONS } from "./stores/index.js";
 import { HomePage, ProductDetailPage, NotFoundPage } from "./pages/index.js";
 import items from "./mocks/items.json" with { type: "json" };
+import { router } from "./router/router.js";
 
-class ServerRouter {
-  #routes;
-  #baseUrl;
-
-  constructor(baseUrl = "") {
-    this.#routes = new Map();
-    this.#baseUrl = baseUrl.replace(/\/$/, "");
-  }
-
-  addRoute(path, handler) {
-    // :id → (\\\\d+) 정규식 변환
-    // paramNames 배열 저장
-    const paramNames = [];
-    const regexPath = path
-      .replace(/:\w+/g, (match) => {
-        paramNames.push(match.slice(1));
-        return "([^/]+)";
-      })
-      .replace(/\//g, "\\/");
-
-    const regex = new RegExp(`^${this.#baseUrl}${regexPath}$`);
-
-    this.#routes.set(path, {
-      regex,
-      paramNames,
-      handler,
-    });
-  }
-
-  findRoute(url) {
-    // 매칭 + params 추출
-    const pathname = url.startsWith("http") ? new URL(url).pathname : url.split("?")[0];
-
-    for (const route of this.#routes) {
-      const match = pathname.match(route.regex);
-      if (match) {
-        const params = {};
-        route.paramNames.forEach((name, index) => {
-          params[name] = match[index + 1];
-        });
-        return { handler: route.handler, params };
-      }
-    }
-    return { handler: null, params: {} };
-  }
-}
+router.addRoute("/", HomePage);
+router.addRoute("/product/:id/", ProductDetailPage);
+router.addRoute(".*", NotFoundPage);
 
 async function prefetchData(serverProductStore, serverCartStore, params) {
   // 카테고리 데이터 생성
@@ -97,25 +55,27 @@ async function prefetchData(serverProductStore, serverCartStore, params) {
   };
 }
 
-export const render = async (url) => {
+export const render = async (url, query) => {
   try {
     // 1. Store 초기화 (서버용 독립적인 Store)
     const serverProductStore = createStore(productReducer, initialProductState);
     const serverCartStore = createStore(cartReducer, initialCartState);
 
     // 2. 서버 라우터 생성 및 라우트 매칭
-    const serverRouter = new ServerRouter();
-    serverRouter.addRoute("/", HomePage);
-    serverRouter.addRoute("/product/:id/", ProductDetailPage);
-    serverRouter.addRoute(".*", NotFoundPage);
+    // router.addRoute("/", HomePage);
+    // router.addRoute("/product/:id/", ProductDetailPage);
+    // router.addRoute(".*", NotFoundPage);
 
-    const matchedRoute = serverRouter.findRoute(url);
+    router.start();
+    router.push(url);
+    router.query = query;
+    //const matchedRoute = router.findRoute(url);
 
     // 3. 데이터 프리페칭
-    const initialData = await prefetchData(serverProductStore, serverCartStore, matchedRoute.params);
+    const initialData = await prefetchData(serverProductStore, serverCartStore, router.params);
 
     // 4. HTML 생성
-    const PageComponent = matchedRoute.handler || NotFoundPage;
+    const PageComponent = router.target || NotFoundPage;
     const html = PageComponent ? PageComponent() : "";
 
     // 5. Head 태그 생성 (SEO)
