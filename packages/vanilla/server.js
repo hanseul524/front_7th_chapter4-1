@@ -37,7 +37,14 @@ if (!prod) {
 }
 
 app.get("*", async (req, res) => {
-  const url = req.originalUrl.replace(base, "") || "/";
+  let url = req.originalUrl;
+
+  if (base !== "/" && url.startsWith(base)) {
+    url = url.substring(base.length);
+  }
+  if (!url || url.startsWith("?")) {
+    url = "/" + (url || "");
+  }
 
   let template;
 
@@ -49,7 +56,7 @@ app.get("*", async (req, res) => {
     // production : 빌드된 html 사용
     template = fs.readFileSync(path.resolve(__dirname, "dist/vanilla/index.html"), "utf-8");
   }
-  const { html, head, initialData } = await render(url);
+  const { html, head, initialData } = await render(url, req.query);
 
   const initialDataScript = `
   <script>

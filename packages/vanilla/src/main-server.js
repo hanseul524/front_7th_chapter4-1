@@ -8,7 +8,7 @@ router.addRoute("/", HomePage);
 router.addRoute("/product/:id/", ProductDetailPage);
 //router.addRoute(".*", NotFoundPage);
 
-async function prefetchData(serverProductStore, params) {
+async function prefetchData(serverProductStore, params, query = {}) {
   // 카테고리 데이터 생성
   const categories = items.reduce((acc, item) => {
     const { category1, category2 } = item;
@@ -35,18 +35,57 @@ async function prefetchData(serverProductStore, params) {
         type: PRODUCT_ACTIONS.SET_CATEGORIES,
         payload: categories,
       });
+      // 관련상품
+      const relatedProducts = items
+        .filter((item) => item.productId !== product.productId && item.category2 === product.category2)
+        .sort((a, b) => parseInt(a.lprice) - parseInt(b.lprice))
+        .slice(0, 20);
+
+      serverProductStore.dispatch({
+        type: PRODUCT_ACTIONS.SET_RELATED_PRODUCTS,
+        payload: relatedProducts,
+      });
     }
   } else {
-    // 상품 가격 오름차순 정렬 (테스트에서 그렇게 나옴)
-    const sortedItems = [...items].sort((a, b) => {
-      return parseInt(a.lprice) - parseInt(b.lprice);
+    // 필터링 적용
+    let filteredItems = [...items];
+
+    if (query.search) {
+      const searchLower = query.search.toLowerCase();
+      filteredItems = filteredItems.filter((item) => item.title.toLowerCase().includes(searchLower));
+    }
+
+    if (query.category1) {
+      filteredItems = filteredItems.filter((item) => item.category1 === query.category1);
+    }
+    if (query.category2) {
+      filteredItems = filteredItems.filter((item) => item.category2 === query.category2);
+    }
+
+    const sort = query.sort || "price_asc";
+    filteredItems.sort((a, b) => {
+      switch (sort) {
+        case "price_asc":
+          return parseInt(a.lprice) - parseInt(b.lprice);
+        case "price_desc":
+          return parseInt(b.lprice) - parseInt(a.lprice);
+        case "name_asc":
+          return a.title.localeCompare(b.title);
+        case "name_desc":
+          return b.title.localeCompare(a.title);
+        default:
+          return parseInt(a.lprice) - parseInt(b.lprice);
+      }
     });
+
+    const limit = parseInt(query.limit) || 20;
+
     // 홈 페이지 (상품 목록)
     serverProductStore.dispatch({
       type: PRODUCT_ACTIONS.SET_PRODUCTS,
       payload: {
-        products: sortedItems.slice(0, 20),
-        totalCount: items.length,
+        products: filteredItems.slice(0, limit),
+        totalCount: filteredItems.length,
       },
     });
     serverProductStore.dispatch({
@@ -68,12 +107,6 @@ export const render = async (url, query) => {
   try {
     // 1. Store 초기화 (서버용 독립적인 Store)
     const serverProductStore = createStore(productReducer, initialProductState);
-    //const serverCartStore = createStore(cartReducer, initialCartState);
-
-    // 2. 서버 라우터 생성 및 라우트 매칭
-    // router.addRoute("/", HomePage);
-    // router.addRoute("/product/:id/", ProductDetailPage);
-    // router.addRoute(".*", NotFoundPage);
 
     //router.start();
     router.push(url);
@@ -81,7 +114,7 @@ export const render = async (url, query) => {
     //const matchedRoute = router.findRoute(url);
 
     // 3. 데이터 프리페칭
-    const initialData = await prefetchData(serverProductStore, router.params);
+    const initialData = await prefetchData(serverProductStore, router.params, query);
 
     // 4. HTML 생성
     const PageComponent = router.target || NotFoundPage;
@@ -98,7 +131,7 @@ export const render = async (url, query) => {
     let head = "";
     if (currentProduct) {
       head = `
-        <title>${currentProduct.title} | Shopping Mall</title>
+        <title>${currentProduct.title} - 쇼핑몰</title>
         <meta name="description" content="${currentProduct.description || currentProduct.title}" />
         <meta property="og:title" content="${currentProduct.title}" />
         <meta property="og:description" content="${currentProduct.description || currentProduct.title}" />
@@ -106,7 +139,7 @@ export const render = async (url, query) => {
       `;
     } else {
       head = `
-        <title>Shopping Mall</title>
+        <title>쇼핑몰 - 홈</title>
         <meta name="description" content="최고의 상품을 만나보세요" />
       `;
     }
